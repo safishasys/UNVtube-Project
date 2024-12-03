@@ -1,0 +1,36 @@
+name: Scheduled Backups
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v1
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+    
+    - name: Backup database
+      run: |
+        timestamp=$(date +%Y%m%d_%H%M%S)
+        pg_dump ${{ secrets.DATABASE_URL }} > backup_${timestamp}.sql
+        aws s3 cp backup_${timestamp}.sql s3://${{ secrets.BACKUP_BUCKET }}/database/
+    
+    - name: Backup content
+      run: |
+        timestamp=$(date +%Y%m%d_%H%M%S)
+        zip -r content_${timestamp}.zip content/
+        aws s3 cp content_${timestamp}.zip s3://${{ secrets.BACKUP_BUCKET }}/content/
+    
+    - name: Cleanup old backups
+      run: |
+        aws s3 ls s3://${{ secrets.BACKUP_BUCKET }}/database/ --recursive | sort | head -n -7 | aws s3 rm
+        aws s3 ls s3://${{ secrets.BACKUP_BUCKET }}/content/ --recursive | sort | head -n -7 | aws s3 rm
